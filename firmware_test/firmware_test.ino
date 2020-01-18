@@ -179,13 +179,24 @@ void loop()
 	// _serial.print("val:" );
 	// _serial.println(val);
 
-	digitalWrite(PC13, HIGH);
-	transmit();
+	//digitalWrite(PC13, HIGH);
+
+	static uint16_t rc = 1000;
+
+	
+	rc += 20;
+
+	transmit(rc);
 	delay(18);
-	digitalWrite(PC13, LOW);
+
+
+	if(rc >= 2000)
+		rc = 1000;
+
+	//digitalWrite(PC13, LOW);
 }
 
-void transmit()
+void transmit(uint16_t rc)
 {
 	static uint16_t index = 0;
 	uint8_t buffer[3];
@@ -232,17 +243,14 @@ void transmit()
 	payload[1] = 0x04; // ????
 	payload[2] = 0x3B; // ????
 
-	
-
 	// next channel index
 	payload[3] = index;
 
-	
 	// step size and last 2 channels start index?
 	payload[4] = _step;
 
 	// radio number
-	payload[5] = 0x1E; //0x1E
+	payload[5] = 0x1E;
 
 	// binding mode?
 	payload[6] = 0x00; // 0x00 regular / 0x41 bind?
@@ -250,7 +258,13 @@ void transmit()
 	// ????
 	payload[7] = 0x00;
 
-	memcpy(&payload[8], &weird[index % 2][0], 16);
+	//memcpy(&payload[8], &weird[index % 2][0], 16);
+
+	uint16_t val = (uint16_t)(rc * 1.5f) - 1226;
+
+	// ch1 data
+	payload[8] = val;
+	payload[9] = (val >> 8) & 0b0111;
 
 	uint16_t crc = frskysx_crc(payload, 24);
 
