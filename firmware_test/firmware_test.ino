@@ -76,15 +76,8 @@ uint32_t freq_map[] =
 	0
 };
 
-
-uint8_t weird[2][16] =
-{
-{0x00, 0x04, 0x40, 0x00, 0x04, 0x40, 0x00, 0x04, 0x40, 0x00, 0x04, 0x40, 0x08, 0x00, 0x00, 0x00},
-{0x00, 0x0C, 0xC0, 0x00, 0x0C, 0xC0, 0x00, 0x0C, 0xC0, 0x00, 0x0C, 0xC0, 0x08, 0x00, 0x00, 0x00}
-};
-
-
-uint8_t _step = 20;
+static uint8_t _step = 20;
+static uint16_t _rc[16] = { 0 };
 
 void setup()
 {   
@@ -165,6 +158,9 @@ void setup()
 	// temp?
 	//writeRegister(REG_PA_CONFIG, 0xF0);
 
+	_rc[0] = 1000;
+	_rc[1] = 2000;
+
 }
 
 void loop()
@@ -181,33 +177,40 @@ void loop()
 
 	//digitalWrite(PC13, HIGH);
 
-	static uint16_t rc = 1000;
+	// _rc[0] += 20;
 
-	
-	rc += 20;
+	// if(_rc[0] > 2000)
+	// 	_rc[0] = 1000;
 
-	transmit(rc);
+	// _rc[1] -= 20;
+
+	// if(_rc[1] < 1000)
+	// 	_rc[1] = 2000;
+
+	for(int i = 0; i < 8; i++)
+	{
+		_rc[i] = 1000 + i * 100;		
+	}
+
+	transmit();
 	delay(18);
 
-
-	if(rc >= 2000)
-		rc = 1000;
+	
 
 	//digitalWrite(PC13, LOW);
 }
 
-void transmit(uint16_t rc)
+void transmit()
 {
 	static uint16_t index = 0;
 	uint8_t buffer[3];
 
 	writeRegister(REG_OP_MODE, 0x81); // STDBY
-	writeRegister(REG_IRQ_FLAGS_MASK, 0xbf);
-
+	writeRegister(REG_IRQ_FLAGS_MASK, 0xbf); // use only RxDone interrupt
 
 	buffer[0] = 0x00;
 	buffer[1] = 0x00;
-	writeRegisters(REG_DIO_MAPPING1, buffer, 2);
+	writeRegisters(REG_DIO_MAPPING1, buffer, 2); // RxDone interrupt mapped to DIO0 (the rest are not used because of the REG_IRQ_FLAGS_MASK)
 
 	// writeRegister(REG_PAYLOAD_LENGTH, 13);
 
@@ -226,7 +229,7 @@ void transmit(uint16_t rc)
 	buffer[1] = (freq & (0xFF << 8)) >> 8;
 	buffer[2] = freq & 0xFF;
 	
-	writeRegisters(REG_FRF_MSB, buffer, 3); // set next freq
+	writeRegisters(REG_FRF_MSB, buffer, 3); // set current center frequency
 	
 	delayMicroseconds(500);
 
@@ -234,37 +237,50 @@ void transmit(uint16_t rc)
 	writeRegister(REG_FIFO_TX_BASE_ADDR, 0x00);
 	writeRegister(REG_FIFO_ADDR_PTR, 0x00);
 
-	
+	uint8_t payload[26];
 
-	uint8_t payload[26] = { 0 }; 
-
-	//header?
 	payload[0] = 0x3C; // ????
 	payload[1] = 0x04; // ????
 	payload[2] = 0x3B; // ????
+	payload[3] = index; // current channel index
+	payload[4] = _step; // step size and last 2 channels start index
+	payload[5] = 0x1E; // radio number
+	payload[6] = 0x00; // binding mode: 0x00 regular / 0x41 bind?
+	payload[7] = 0x00; // fail safe related (looks like the same sequence of numbers as FrskyX protocol)
 
-	// next channel index
-	payload[3] = index;
+	// c[0] = (uint16_t)((packet[10] << 8) & 0xF00) | packet[9];
+    // c[1] = (uint16_t)((packet[11] << 4) & 0xFF0) | (packet[10] >> 4);
+    // c[2] = (uint16_t)((packet[13] << 8) & 0xF00) | packet[12];
+    // c[3] = (uint16_t)((packet[14] << 4) & 0xFF0) | (packet[13] >> 4);
+    // c[4] = (uint16_t)((packet[16] << 8) & 0xF00) | packet[15];
+    // c[5] = (uint16_t)((packet[17] << 4) & 0xFF0) | (packet[16] >> 4);
+    // c[6] = (uint16_t)((packet[19] << 8) & 0xF00) | packet[18];
+    // c[7] = (uint16_t)((packet[20] << 4) & 0xFF0) | (packet[19] >> 4);
 
-	// step size and last 2 channels start index?
-	payload[4] = _step;
+	uint16_t scaled[8];
+	scale_rc(_rc, scaled, 8);
+	
+	// rc data
+	payload[8] = scaled[0];
+	payload[9] = ((scaled[0] >> 8) & 0b0111) | (scaled[1] << 4);
+	payload[10] = (scaled[1] >> 4) & 0b01111111;
 
-	// radio number
-	payload[5] = 0x1E;
+	payload[11] = scaled[2];
+	payload[12] = ((scaled[2] >> 8) & 0b0111) | (scaled[3] << 4);
+	payload[13] = (scaled[3] >> 4) & 0b01111111;
 
-	// binding mode?
-	payload[6] = 0x00; // 0x00 regular / 0x41 bind?
+	payload[14] = scaled[4];
+	payload[15] = ((scaled[4] >> 8) & 0b0111) | (scaled[5] << 4);
+	payload[16] = (scaled[5] >> 4) & 0b01111111;
 
-	// ????
-	payload[7] = 0x00;
-
-	//memcpy(&payload[8], &weird[index % 2][0], 16);
-
-	uint16_t val = (uint16_t)(rc * 1.5f) - 1226;
-
-	// ch1 data
-	payload[8] = val;
-	payload[9] = (val >> 8) & 0b0111;
+	payload[17] = scaled[6];
+	payload[18] = ((scaled[6] >> 8) & 0b0111) | (scaled[7] << 4);
+	payload[19] = (scaled[7] >> 4) & 0b01111111;
+	
+	payload[20] = 0x08; // ????
+	payload[21] = 0x00; // ????
+	payload[22] = 0x00; // ????
+	payload[23] = 0x00; // ????
 
 	uint16_t crc = frskysx_crc(payload, 24);
 
@@ -281,6 +297,12 @@ void transmit(uint16_t rc)
 	writeRegister(REG_OP_MODE, 0x83); // TX
 
 	// need to clear RegIrqFlags?
+}
+
+void scale_rc(uint16_t* rc, uint16_t* scaled, uint8_t channels)
+{
+	for(int i = 0; i < channels; i++)
+		scaled[i] = (uint16_t)(rc[i] * 1.5f) - 1226;
 }
 
 uint8_t readRegister(uint8_t address)
@@ -359,9 +381,4 @@ uint16_t frskysx_crc(uint8_t* data, uint8_t len)
 	for (uint8_t i = 0; i < len; i++)
 		crc = (crc << 8) ^ frskysx_crc_table((uint8_t)(crc >> 8) ^ *data++);
 	return crc;
-}
-
-void dump_registers()
-{
-
 }
