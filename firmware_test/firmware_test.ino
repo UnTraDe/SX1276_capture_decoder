@@ -195,8 +195,6 @@ void loop()
 	transmit();
 	delay(18);
 
-	
-
 	//digitalWrite(PC13, LOW);
 }
 
@@ -248,34 +246,33 @@ void transmit()
 	payload[6] = 0x00; // binding mode: 0x00 regular / 0x41 bind?
 	payload[7] = 0x00; // fail safe related (looks like the same sequence of numbers as FrskyX protocol)
 
-	// c[0] = (uint16_t)((packet[10] << 8) & 0xF00) | packet[9];
-    // c[1] = (uint16_t)((packet[11] << 4) & 0xFF0) | (packet[10] >> 4);
-    // c[2] = (uint16_t)((packet[13] << 8) & 0xF00) | packet[12];
-    // c[3] = (uint16_t)((packet[14] << 4) & 0xFF0) | (packet[13] >> 4);
-    // c[4] = (uint16_t)((packet[16] << 8) & 0xF00) | packet[15];
-    // c[5] = (uint16_t)((packet[17] << 4) & 0xFF0) | (packet[16] >> 4);
-    // c[6] = (uint16_t)((packet[19] << 8) & 0xF00) | packet[18];
-    // c[7] = (uint16_t)((packet[20] << 4) & 0xFF0) | (packet[19] >> 4);
+	const int payload_offset = 8;
+	const bool is_upper = false;
 
-	uint16_t scaled[8];
-	scale_rc(_rc, scaled, 8);
-	
-	// rc data
-	payload[8] = scaled[0];
-	payload[9] = ((scaled[0] >> 8) & 0b0111) | (scaled[1] << 4);
-	payload[10] = (scaled[1] >> 4) & 0b01111111;
+	int chan_index = 0;
 
-	payload[11] = scaled[2];
-	payload[12] = ((scaled[2] >> 8) & 0b0111) | (scaled[3] << 4);
-	payload[13] = (scaled[3] >> 4) & 0b01111111;
+	for(int i = 0; i < 8; i += 3)
+	{
+		// two channel are spread over 3 bytes.
+		// each channel is 11 bit + 1 bit (msb) that states whether
+		// it's part of the upper channels (9-16) or lower (1-8) (0 - lower 1 - upper)
+		uint16_t ch1 = (uint16_t)(_rc[chan_index] * 1.5f) - 1226;
+		uint16_t ch2 = (uint16_t)(_rc[chan_index + 1] * 1.5f) - 1226;
+		chan_index += 2;
 
-	payload[14] = scaled[4];
-	payload[15] = ((scaled[4] >> 8) & 0b0111) | (scaled[5] << 4);
-	payload[16] = (scaled[5] >> 4) & 0b01111111;
+		payload[payload_offset + i] = ch1;
 
-	payload[17] = scaled[6];
-	payload[18] = ((scaled[6] >> 8) & 0b0111) | (scaled[7] << 4);
-	payload[19] = (scaled[7] >> 4) & 0b01111111;
+		if(is_upper)
+		{
+			payload[payload_offset + i + 1] = ((ch1 >> 8) | 0b1000) | (ch2 << 4);
+			payload[payload_offset + i + 2] = (ch2 >> 4) | 0b10000000;
+		}
+		else
+		{
+			payload[payload_offset + i + 1] = ((ch1 >> 8) & 0b0111) | (ch2 << 4);
+			payload[payload_offset + i + 2] = (ch2 >> 4) & 0b01111111;
+		}
+	}
 	
 	payload[20] = 0x08; // ????
 	payload[21] = 0x00; // ????
@@ -287,7 +284,6 @@ void transmit()
 	payload[24] = crc; // low byte
 	payload[25] = crc >> 8; // high byte
 
-
 	// write payload to fifo
 	writeRegisters(REG_FIFO, payload, 26);
 
@@ -297,12 +293,6 @@ void transmit()
 	writeRegister(REG_OP_MODE, 0x83); // TX
 
 	// need to clear RegIrqFlags?
-}
-
-void scale_rc(uint16_t* rc, uint16_t* scaled, uint8_t channels)
-{
-	for(int i = 0; i < channels; i++)
-		scaled[i] = (uint16_t)(rc[i] * 1.5f) - 1226;
 }
 
 uint8_t readRegister(uint8_t address)
