@@ -119,42 +119,7 @@ if __name__ == "__main__":
 
 	# create timeline from MISO file
 
-	# with open(FILE_MISO) as f:
-	# 	next(f)
-	# 	for row in csv.reader(f, delimiter=','):
-	# 		timestamp = float(row[1])
-			
-	# 		arr = []
-
-	# 		for i, b in enumerate(row[2].split(" ")):
-	# 			try:
-	# 				arr.append(int(b, 16))
-	# 			except ValueError:
-	# 				raise Exception(f"none int literal: {b} at line: {i}")
-
-	# 		timeline.append([timestamp, arr])
-
-	# merge MOSI into timeline
-
-	# i = 0
-
-	# with open(FILE_MOSI) as f:
-	# 	next(f)
-	# 	for row in csv.reader(f, delimiter=','):
-	# 		timestamp = float(row[1])
-			
-	# 		if timeline[i][TIMESTAMP] != timestamp:
-	# 			raise Exception("timestamp mismatch, make sure all the input files are from the same capture!")
-			
-	# 		arr = []
-
-	# 		for b in row[2].split(" "):
-	# 			arr.append(int(b, 16))
-
-	# 		timeline[i].append(arr)
-	# 		i = i + 1
-
-	with open(FILE_MOSI) as f:
+	with open(FILE_MISO) as f:
 		next(f)
 		for row in csv.reader(f, delimiter=','):
 			timestamp = float(row[1])
@@ -164,11 +129,46 @@ if __name__ == "__main__":
 			for i, b in enumerate(row[2].split(" ")):
 				try:
 					arr.append(int(b, 16))
-					ok = True
 				except ValueError:
 					raise Exception(f"none int literal: {b} at line: {i}")
 
-			timeline.append([timestamp, [i for i in range(len(arr))], arr])
+			timeline.append([timestamp, arr])
+
+	# merge MOSI into timeline
+
+	i = 0
+
+	with open(FILE_MOSI) as f:
+		next(f)
+		for row in csv.reader(f, delimiter=','):
+			timestamp = float(row[1])
+			
+			if timeline[i][TIMESTAMP] != timestamp:
+				raise Exception("timestamp mismatch, make sure all the input files are from the same capture!")
+			
+			arr = []
+
+			for b in row[2].split(" "):
+				arr.append(int(b, 16))
+
+			timeline[i].append(arr)
+			i = i + 1
+
+	# with open(FILE_MOSI) as f:
+	# 	next(f)
+	# 	for row in csv.reader(f, delimiter=','):
+	# 		timestamp = float(row[1])
+			
+	# 		arr = []
+
+	# 		for i, b in enumerate(row[2].split(" ")):
+	# 			try:
+	# 				arr.append(int(b, 16))
+	# 				ok = True
+	# 			except ValueError:
+	# 				raise Exception(f"none int literal: {b} at line: {i}")
+
+	# 		timeline.append([timestamp, [i for i in range(len(arr))], arr])
 
 			
 
